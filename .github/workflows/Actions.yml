@@ -6,12 +6,12 @@ on:
       duration:
         description: '🕐 Usage time'
         required: false
-        default: '72h60m60s'
+        default: '72h60m'
         type: choice
         options:
-        - '72h60m60s'
-        - '72h60m60s'
-        - '72h60m60s'
+        - '72h60m'
+        - '72h60m'
+        - '72h60m'
 
 jobs:
   Premium-RDP-Setup:
