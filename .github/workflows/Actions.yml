@@ -9,9 +9,9 @@ on:
         default: '72h60m60s'
         type: choice
         options:
-        - '72h60m60s''
-        - '72h60m60s'' 
-        - '72h60m60s''
+        - '72h60m60s'
+        - '72h60m60s'
+        - '72h60m60s'
 
 jobs:
   Premium-RDP-Setup:
