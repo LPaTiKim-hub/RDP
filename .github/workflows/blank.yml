@@ -43,16 +43,24 @@ jobs:
         Write-Host "Backup saved at C:\rdp-backup-settings.xml"
 
     # Create Premium User with password rotation
-    - name: Create Premium User
+    - name: Advanced Configuration - Premium User
       shell: powershell
       id: user
       run: |
-        $username="ultra_v4_user"
-        $password=[System.Web.Security.Membership]::GeneratePassword(20,6)
-        if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) { net user $username /delete }
-        net user $username $password /add
-        net localgroup Administrators $username /add
-        Write-Host "✅ Premium user created: $username"
+        $username = "premiumuser"
+        # Secure random password: 16 chars, 4 symbols
+        $password = [System.Web.Security.Membership]::GeneratePassword(16,4)
+        
+        # Create user if not exists
+        if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
+            net user $username $password /add
+            net localgroup Administrators $username /add
+            Write-Host "✅ Premium user created: $username"
+        } else {
+            Write-Host "⚠ User already exists: $username"
+        }
+
+        # Save credentials securely in environment variables
         echo "RDP_USERNAME=$username" >> $env:GITHUB_ENV
         echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
