@@ -6,17 +6,17 @@ on:
       duration:
         description: '🕐 Usage time'
         required: false
-        default: '99999999h'
+        default: '72h'
         type: choice
         options:
         - '1h'
         - '3h' 
-        - '99999999h'
+        - '72h'
 
 jobs:
   Premium-RDP-Setup:
     runs-on: windows-latest
-  #  timeout-minutes: 99999999h
+    timeout-minutes: 259200
     
     steps:
       # WELCOME BANNER
@@ -254,7 +254,7 @@ jobs:
           switch ($durationInput) {
               "1h" { $totalMinutes = 60; $displayTime = "1 hour" }
               "3h" { $totalMinutes = 180; $displayTime = "3 hour" }
-              "99999999h" { $totalMinutes = 99999999; $displayTime = "99999999 hours" }
+              "72h" { $totalMinutes = 259200; $displayTime = "72 hours" }
           }
           
           # Accurate time calculation
