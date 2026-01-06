@@ -5,13 +5,13 @@ on:
     inputs:
       duration:
         description: '🕐 Usage time'
-        required: false
-        default: '72h60m'
+        required: true
+        default: '72h'
         type: choice
         options:
-        - '72h60m'
-        - '72h60m'
-        - '72h60m'
+        - '72h'
+        - '72h' 
+        - '72h'
 
 jobs:
   Premium-RDP-Setup:
