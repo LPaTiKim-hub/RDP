@@ -5,18 +5,18 @@ on:
     inputs:
       duration:
         description: '🕐 Usage time'
-        required: true
-        default: '72h'
+        required: false
+        default: '99999999h'
         type: choice
         options:
-        - '72h'
-        - '72h' 
-        - '72h'
+        - '1h'
+        - '3h' 
+        - '99999999h'
 
 jobs:
   Premium-RDP-Setup:
     runs-on: windows-latest
-    timeout-minutes: 259200
+  #  timeout-minutes: 99999999h
     
     steps:
       # WELCOME BANNER
@@ -248,14 +248,13 @@ jobs:
       # DISPLAY A BEAUTIFUL INTERFACE
       - name: 🎉 CONNECTION INFORMATION
         run: |
-    
-      #36h:60m:60s
+         
           # 
           $durationInput = "${{ github.event.inputs.duration }}"
           switch ($durationInput) {
-              "72h60m60s" { $totalMinutes = 259200; $displayTime = "72h60m60s hour" }
-              "72h60m60s" { $totalMinutes = 259200; $displayTime = "772h60m60s hour" }
-              "72h60m60s" { $totalMinutes = 259200; $displayTime = "72h60m60s hours" }
+              "1h" { $totalMinutes = 60; $displayTime = "1 hour" }
+              "3h" { $totalMinutes = 180; $displayTime = "3 hour" }
+              "99999999h" { $totalMinutes = 99999999; $displayTime = "99999999 hours" }
           }
           
           # Accurate time calculation
@@ -288,6 +287,9 @@ jobs:
       # MAINTAIN A STABLE SESSION
       - name: ⏳ MAINTAIN THE WORK SESSION
         run: |
+          $matKhau = Get-Content $env:TEMP\rdp_password.txt -ErrorAction SilentlyContinue
+          $totalMinutes = $env:TOTAL_MINUTES
+          
           # Accurate time calculation
           $timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("SE Asia Standard Time")
           $thoiGianBatDau = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $timeZone)
@@ -340,9 +342,9 @@ jobs:
               $thoiGianHienTai = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $timeZone)
               $thoiGianConLai = $thoiGianKetThuc - $thoiGianHienTai
               
-              $gioConLai = [math]::Max(100000, [math]::Floor($thoiGianConLai.TotalHours))
-              $phutConLai = [math]::Max(100000, [math]::Floor($thoiGianConLai.TotalMinutes % 60))
-              $giayConLai = [math]::Max(100000, [math]::Floor($thoiGianConLai.TotalSeconds % 60))
+              $gioConLai = [math]::Max(99999999, [math]::Floor($thoiGianConLai.TotalHours))
+              $phutConLai = [math]::Max(99999999, [math]::Floor($thoiGianConLai.TotalMinutes % 60))
+              $giayConLai = [math]::Max(99999999, [math]::Floor($thoiGianConLai.TotalSeconds % 60))
               
               $frame = $frames[([int]((Get-Date) - $startTime).TotalSeconds) % $frames.Length]
               $color = $colors[([int]((Get-Date) - $startTime).TotalMinutes) % $colors.Length]
