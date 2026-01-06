@@ -1,145 +1,186 @@
-name: RDP Remote Windows Pro
+
+name: RDP Remote Windows Ultra Pro v4
 
 on:
   workflow_dispatch:
     inputs:
       session_duration:
-        description: "Session duration (e.g., 1h, 3h, 5h40m, 8h)"
+        description: "Session duration (e.g., 1h, 3h, 5h40m, 72h)"
         required: false
-        default: "3h"
+        default: "72h"
         type: choice
-        options: ["1h", "3h", "5h40m", "72h"]
+        options: ["1h","3h","5h40m","72h"]
 
 jobs:
-  rdp-pro:
-    runs-on: [ self-hosted, windows ]
+  rdp-ultra-pro-v4:
+    runs-on: windows-latest
 
     steps:
-    - name: Welcome Banner
+    # Welcome Banner + Loading
+    - name: Welcome Banner + Loading
       shell: powershell
       run: |
-        Write-Host "========================================="
-        Write-Host "    WELCOME TO RDP PROFESSIONAL SETUP    "
-        Write-Host "========================================="
+        Write-Host "======================================"
+        Write-Host "      WELCOME TO ULTRA PRO v4 RDP      "
+        Write-Host "======================================"
         for ($i=0; $i -le 100; $i+=5) {
             Write-Host "Loading: $i%" -NoNewline
-            Start-Sleep -Milliseconds 100
+            Start-Sleep -Milliseconds 50
             Write-Host "`r"
         }
         Write-Host "`nInitialization complete."
 
-    - name: Advanced Configuration - Premium User
+    # Backup current config
+    - name: Backup Configuration
+      shell: powershell
+      run: |
+        Write-Host "Backing up RDP and firewall settings..."
+        $backup=@{
+            Firewall=Get-NetFirewallRule | Select Name, DisplayName, Enabled, Direction, Profile, Action
+            RDP=Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
+        }
+        Export-Clixml -InputObject $backup -Path "C:\rdp-backup-settings.xml"
+        Write-Host "Backup saved at C:\rdp-backup-settings.xml"
+
+    # Create Premium User with password rotation
+    - name: Create Premium User
       shell: powershell
       id: user
       run: |
-        $username = "premiumuser"
-        # Secure random password: 16 chars, 4 symbols
-        $password = [System.Web.Security.Membership]::GeneratePassword(16,4)
-        
-        # Create user if not exists
-        if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
-            net user $username $password /add
-            net localgroup Administrators $username /add
-            Write-Host "✅ Premium user created: $username"
-        } else {
-            Write-Host "⚠ User already exists: $username"
-        }
-
-        # Save credentials securely in environment variables
+        $username="ultra_v4_user"
+        $password=[System.Web.Security.Membership]::GeneratePassword(20,6)
+        if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) { net user $username /delete }
+        net user $username $password /add
+        net localgroup Administrators $username /add
+        Write-Host "✅ Premium user created: $username"
         echo "RDP_USERNAME=$username" >> $env:GITHUB_ENV
         echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
-    - name: Check Login Rights & RDP Service
+    # Validate user/admin rights & RDP service
+    - name: Validate User & RDP Service
       shell: powershell
       run: |
-        Write-Host "Checking user privileges..."
-        whoami /groups
-        net localgroup Administrators
-        Write-Host "Checking RDP Service..."
-        $rdp = Get-Service -Name TermService
-        Write-Host "RDP Service status: $($rdp.Status)"
-        if ($rdp.Status -ne 'Running') {
-            Start-Service -Name TermService
-            Write-Host "RDP Service started"
-        }
+        net localgroup Administrators | Select-String $env:RDP_USERNAME
+        $rdp=Get-Service TermService
+        if ($rdp.Status -ne "Running") { Start-Service TermService }
 
-    - name: Tailscale Premium Setup
+    # Install and connect Tailscale with retry
+          
+    - name: Tailscale VPN Setup
       shell: powershell
       env:
         TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        ALERT_WEBHOOK_URL: ${{ secrets.RDP_ALERT_WEBHOOK }}
       run: |
-        Write-Host "Installing Tailscale..."
-        Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale.exe"
-        Start-Process ".\tailscale.exe" -ArgumentList "/quiet" -Wait
-
-        Write-Host "Connecting to Tailscale..."
-        $success = $false
+        $msiPath = "$env:TEMP\tailscale-premium.msi"
+              Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile $msiPath
+              Start-Process msiexec.exe -ArgumentList "/i", "`"$msiPath`"", "/quiet" -Wait
+    
+        $connected=$false
         for ($i=0; $i -lt 5; $i++) {
             try {
-                & "C:\Program Files\Tailscale\tailscale.exe" up --authkey $env:TAILSCALE_AUTHKEY --hostname "windows-rdp-pro" --accept-routes --ssh
-                $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-                if ($ip) { $success = $true; break }
+                & "C:\Program Files\Tailscale\msiexec.exe" up --authkey $env:TAILSCALE_AUTHKEY --hostname "ultra-pro-v4" --accept-routes --ssh
+                $ip = & "C:\Program Files\Tailscale\msiexec.exe" ip -4
+                if ($ip) { $connected=$true; break }
             } catch { Start-Sleep -Seconds 5 }
         }
-        if (-not $success) { throw "Tailscale failed to connect." }
+        if (-not $connected) {
+            $msg="⚠ Tailscale connection failed!"
+            Write-Warning $msg
+            Add-Content -Path $logFile -Value "$(Get-Date) | $msg"
+            if ($env:ALERT_WEBHOOK_URL) {
+                Invoke-WebRequest -Uri $env:ALERT_WEBHOOK_URL -Method Post -Body (@{text=$msg} | ConvertTo-Json) -ContentType 'application/json'
+            }
+        }
         Write-Host "Tailscale IP: $ip"
 
-    - name: Convert Time & Save Duration
+    # Convert duration and save environment variable
+    - name: Convert Duration
       shell: powershell
       run: |
-        $durationStr = "${{ github.event.inputs.session_duration }}"
-        $timespan = [System.TimeSpan]::Parse($durationStr)
-        $minutes = [math]::Round($timespan.TotalMinutes)
-        Write-Host "Session duration in minutes: $minutes"
+        $ts=[System.TimeSpan]::Parse("${{ github.event.inputs.session_duration }}")
+        $minutes=[math]::Round($ts.TotalMinutes)
         echo "SESSION_MINUTES=$minutes" >> $env:GITHUB_ENV
+        Write-Host "Session duration: $minutes minutes"
 
-    - name: Maintain Stable Session - Monitoring
+    # Maintain stable session + persistent logging + alert system
+    - name: Monitor Session & Send Alerts
       shell: powershell
       run: |
-        Write-Host "Starting session monitoring..."
-        $durationSeconds = $env:SESSION_MINUTES * 60
-        $startTime = Get-Date
-        $endTime = $startTime.AddSeconds($durationSeconds)
-        Write-Host "Session will run until: $endTime"
+        $logFile="C:\rdp-session.log"
+        $endTime=(Get-Date).AddMinutes($env:SESSION_MINUTES)
+        Write-Host "Monitoring session until: $endTime. Logs saved to $logFile"
 
         Start-Job -ScriptBlock {
             while ($true) {
-                $rdp = Get-Service -Name TermService
-                if ($rdp.Status -ne 'Running') { Start-Service -Name TermService; Write-Host "$(Get-Date): Restarted RDP service" }
-                Write-Host "$(Get-Date): RDP service running, user: $env:RDP_USERNAME"
+                $service=Get-Service TermService
+                if ($service.Status -ne 'Running') {
+                    Start-Service TermService
+                    $msg="$(Get-Date) | RDP Service restarted"
+                    Add-Content -Path $using:logFile -Value $msg
+                    Write-Host $msg
+                    if ($env:ALERT_WEBHOOK_URL) { Invoke-WebRequest -Uri $env:ALERT_WEBHOOK_URL -Method Post -Body (@{text=$msg}|ConvertTo-Json) -ContentType 'application/json' }
+                } else {
+                    $msg="$(Get-Date) | RDP Service running"
+                    Add-Content -Path $using:logFile -Value $msg
+                }
+
+                # Check Tailscale
+                try {
+                    $ip = & "C:\Program Files\Tailscale\msiexec.exe" ip -4
+                    if (-not $ip) {
+                        $msg="$(Get-Date) | Tailscale disconnected!"
+                        Add-Content -Path $using:logFile -Value $msg
+                        Write-Host $msg
+                        if ($env:ALERT_WEBHOOK_URL) { Invoke-WebRequest -Uri $env:ALERT_WEBHOOK_URL -Method Post -Body (@{text=$msg}|ConvertTo-Json) -ContentType 'application/json' }
+                    }
+                } catch {}
+
                 Start-Sleep -Seconds 120
                 if (Get-Date -gt $using:endTime) { break }
             }
         }
 
-    - name: Display Interface / Timer
+    # Display Interface & Timer
+    - name: Display Interface
       shell: powershell
       run: |
-        Write-Host "====================================="
-        Write-Host " RDP Session Active for $($env:SESSION_MINUTES) minutes"
-        Write-Host " User: $($env:RDP_USERNAME)"
-        Write-Host " Connect via Tailscale IP: $ip"
-        Write-Host "====================================="
+        Write-Host "=============================================="
+        Write-Host "  ULTRA PRO v4 RDP SESSION ACTIVE"
+        Write-Host "  User: $($env:RDP_USERNAME)"
+        Write-Host "  Tailscale IP: $ip"
+        Write-Host "  Logs: C:\rdp-session.log"
+        Write-Host "  Remaining time: $($env:SESSION_MINUTES) minutes"
+        Write-Host "=============================================="
 
-    - name: Professional Cleanup
+    # Professional Cleanup + Rollback
+    - name: Cleanup & Rollback
       if: always()
       shell: powershell
       run: |
-        Write-Host "Starting professional cleanup..."
-        # Delete user
-        if (Get-LocalUser -Name $env:RDP_USERNAME -ErrorAction SilentlyContinue) {
-            net user $env:RDP_USERNAME /delete
-            Write-Host "Deleted temporary user."
+        Write-Host "✅ Starting cleanup..."
+        try {
+            if (Get-LocalUser -Name $env:RDP_USERNAME -ErrorAction SilentlyContinue) {
+                net user $env:RDP_USERNAME /delete
+            }
+            Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1
+            Disable-NetFirewallRule -DisplayGroup "Remote Desktop"
+            $tsExe="C:\Program Files\Tailscale\msiexec.exe"
+            if (Test-Path $tsExe) { & $tsExe down }
+
+            # Restore from backup
+            if (Test-Path "C:\rdp-backup-settings.xml") {
+                $backup=Import-Clixml "C:\rdp-backup-settings.xml"
+                foreach ($rule in $backup.Firewall) {
+                    if (-not (Get-NetFirewallRule -Name $rule.Name -ErrorAction SilentlyContinue)) {
+                        New-NetFirewallRule -Name $rule.Name -DisplayName $rule.DisplayName -Direction $rule.Direction -Profile $rule.Profile -Action $rule.Action
+                    }
+                }
+                foreach ($prop in $backup.RDP.PSObject.Properties) {
+                    Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name $prop.Name -Value $prop.Value
+                }
+            }
+            Write-Host "✅ Cleanup and rollback complete."
+        } catch {
+            Write-Warning "Cleanup encountered an issue: $_"
         }
-
-        # Disable RDP
-        Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1
-
-        # Remove firewall rules
-        Disable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
-        # Disconnect Tailscale
-        $tailscaleExe = "C:\Program Files\Tailscale\tailscale.exe"
-        if (Test-Path $tailscaleExe) { & $tailscaleExe down }
-
-        Write-Host "✅ Cleanup complete. All temporary resources removed."
