@@ -1,194 +1,81 @@
-
-name: RDP Remote Windows Ultra Pro v4
+name: Premium-RDP-Ubuntu-v2
 
 on:
   workflow_dispatch:
     inputs:
       session_duration:
-        description: "Session duration (e.g., 1h, 3h, 5h40m, 72h)"
+        description: "Session duration in minutes"
         required: false
-        default: "72h"
-        type: choice
-        options: ["1h","3h","5h40m","72h"]
+        default: 180
 
 jobs:
-  rdp-ultra-pro-v4:
-    runs-on: windows-latest
+  premium-rdp:
+    runs-on: ubuntu-latest
 
     steps:
-    # Welcome Banner + Loading
-    - name: Welcome Banner + Loading
-      shell: powershell
+    # Update and install dependencies
+    - name: Update System
       run: |
-        Write-Host "======================================"
-        Write-Host "      WELCOME TO ULTRA PRO v4 RDP      "
-        Write-Host "======================================"
-        for ($i=0; $i -le 100; $i+=5) {
-            Write-Host "Loading: $i%" -NoNewline
-            Start-Sleep -Milliseconds 50
-            Write-Host "`r"
-        }
-        Write-Host "`nInitialization complete."
+        sudo apt-get update -y
+        sudo apt-get upgrade -y
+        sudo apt-get install -y curl gnupg lsb-release xrdp xfce4 xfce4-terminal
 
-    # Backup current config
-    - name: Backup Configuration
-      shell: powershell
+    # Install Tailscale
+    - name: Install Tailscale
       run: |
-        Write-Host "Backing up RDP and firewall settings..."
-        $backup=@{
-            Firewall=Get-NetFirewallRule | Select Name, DisplayName, Enabled, Direction, Profile, Action
-            RDP=Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
-        }
-        Export-Clixml -InputObject $backup -Path "C:\rdp-backup-settings.xml"
-        Write-Host "Backup saved at C:\rdp-backup-settings.xml"
+        curl -fsSL https://tailscale.com/install.sh | sh
 
-    # Create Premium User with password rotation
-    - name: Advanced Configuration - Premium User
-      shell: powershell
-      id: user
-      run: |
-        $username = "premiumuser"
-        # Secure random password: 16 chars, 4 symbols
-        $password = [System.Web.Security.Membership]::GeneratePassword(16,4)
-        
-        # Create user if not exists
-        if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
-            net user $username $password /add
-            net localgroup Administrators $username /add
-            Write-Host "✅ Premium user created: $username"
-        } else {
-            Write-Host "⚠ User already exists: $username"
-        }
-
-        # Save credentials securely in environment variables
-        echo "RDP_USERNAME=$username" >> $env:GITHUB_ENV
-        echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
-
-    # Validate user/admin rights & RDP service
-    - name: Validate User & RDP Service
-      shell: powershell
-      run: |
-        net localgroup Administrators | Select-String $env:RDP_USERNAME
-        $rdp=Get-Service TermService
-        if ($rdp.Status -ne "Running") { Start-Service TermService }
-
-    # Install and connect Tailscale with retry
-          
-    - name: Tailscale VPN Setup
-      shell: powershell
+    # Connect Tailscale
+    - name: Connect Tailscale
       env:
         TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
-        ALERT_WEBHOOK_URL: ${{ secrets.RDP_ALERT_WEBHOOK }}
       run: |
-        $msiPath = "$env:TEMP\tailscale-premium.msi"
-              Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile $msiPath
-              Start-Process msiexec.exe -ArgumentList "/i", "`"$msiPath`"", "/quiet" -Wait
-    
-        $connected=$false
-        for ($i=0; $i -lt 5; $i++) {
-            try {
-                & "C:\Program Files\Tailscale\msiexec.exe" up --authkey $env:TAILSCALE_AUTHKEY --hostname "ultra-pro-v4" --accept-routes --ssh
-                $ip = & "C:\Program Files\Tailscale\msiexec.exe" ip -4
-                if ($ip) { $connected=$true; break }
-            } catch { Start-Sleep -Seconds 5 }
-        }
-        if (-not $connected) {
-            $msg="⚠ Tailscale connection failed!"
-            Write-Warning $msg
-            Add-Content -Path $logFile -Value "$(Get-Date) | $msg"
-            if ($env:ALERT_WEBHOOK_URL) {
-                Invoke-WebRequest -Uri $env:ALERT_WEBHOOK_URL -Method Post -Body (@{text=$msg} | ConvertTo-Json) -ContentType 'application/json'
-            }
-        }
-        Write-Host "Tailscale IP: $ip"
+        sudo tailscale up --authkey $TAILSCALE_AUTHKEY --hostname "premium-rdp-ubuntu-v2"
 
-    # Convert duration and save environment variable
-    - name: Convert Duration
-      shell: powershell
+    # Display Tailscale IP
+    - name: Show Tailscale IP
       run: |
-        $ts=[System.TimeSpan]::Parse("${{ github.event.inputs.session_duration }}")
-        $minutes=[math]::Round($ts.TotalMinutes)
-        echo "SESSION_MINUTES=$minutes" >> $env:GITHUB_ENV
-        Write-Host "Session duration: $minutes minutes"
+        tailscale ip -4
 
-    # Maintain stable session + persistent logging + alert system
-    - name: Monitor Session & Send Alerts
-      shell: powershell
+    # Create premium user
+    - name: Create Premium User
+      env:
+        SESSION_DURATION: ${{ github.event.inputs.session_duration }}
       run: |
-        $logFile="C:\rdp-session.log"
-        $endTime=(Get-Date).AddMinutes($env:SESSION_MINUTES)
-        Write-Host "Monitoring session until: $endTime. Logs saved to $logFile"
+        USERNAME="premiumuser"
+        PASSWORD=$(openssl rand -base64 16)
+        sudo useradd -m -s /bin/bash $USERNAME
+        echo "$USERNAME:$PASSWORD" | sudo chpasswd
+        sudo usermod -aG sudo $USERNAME
+        echo "USERNAME=$USERNAME" >> $GITHUB_ENV
+        echo "PASSWORD=$PASSWORD" >> $GITHUB_ENV
+        echo "Premium user created. Session duration: $SESSION_DURATION minutes."
 
-        Start-Job -ScriptBlock {
-            while ($true) {
-                $service=Get-Service TermService
-                if ($service.Status -ne 'Running') {
-                    Start-Service TermService
-                    $msg="$(Get-Date) | RDP Service restarted"
-                    Add-Content -Path $using:logFile -Value $msg
-                    Write-Host $msg
-                    if ($env:ALERT_WEBHOOK_URL) { Invoke-WebRequest -Uri $env:ALERT_WEBHOOK_URL -Method Post -Body (@{text=$msg}|ConvertTo-Json) -ContentType 'application/json' }
-                } else {
-                    $msg="$(Get-Date) | RDP Service running"
-                    Add-Content -Path $using:logFile -Value $msg
-                }
-
-                # Check Tailscale
-                try {
-                    $ip = & "C:\Program Files\Tailscale\msiexec.exe" ip -4
-                    if (-not $ip) {
-                        $msg="$(Get-Date) | Tailscale disconnected!"
-                        Add-Content -Path $using:logFile -Value $msg
-                        Write-Host $msg
-                        if ($env:ALERT_WEBHOOK_URL) { Invoke-WebRequest -Uri $env:ALERT_WEBHOOK_URL -Method Post -Body (@{text=$msg}|ConvertTo-Json) -ContentType 'application/json' }
-                    }
-                } catch {}
-
-                Start-Sleep -Seconds 120
-                if (Get-Date -gt $using:endTime) { break }
-            }
-        }
-
-    # Display Interface & Timer
-    - name: Display Interface
-      shell: powershell
+    # Configure xRDP
+    - name: Configure xRDP
       run: |
-        Write-Host "=============================================="
-        Write-Host "  ULTRA PRO v4 RDP SESSION ACTIVE"
-        Write-Host "  User: $($env:RDP_USERNAME)"
-        Write-Host "  Tailscale IP: $ip"
-        Write-Host "  Logs: C:\rdp-session.log"
-        Write-Host "  Remaining time: $($env:SESSION_MINUTES) minutes"
-        Write-Host "=============================================="
+        sudo systemctl enable xrdp
+        sudo systemctl restart xrdp
+        echo "xRDP service started."
 
-    # Professional Cleanup + Rollback
-    - name: Cleanup & Rollback
-      if: always()
-      shell: powershell
+    # Monitor session and auto cleanup
+    - name: Session Monitor & Cleanup
+      shell: bash
+      env:
+        USERNAME: ${{ env.USERNAME }}
+        SESSION_DURATION: ${{ env.SESSION_DURATION }}
       run: |
-        Write-Host "✅ Starting cleanup..."
-        try {
-            if (Get-LocalUser -Name $env:RDP_USERNAME -ErrorAction SilentlyContinue) {
-                net user $env:RDP_USERNAME /delete
-            }
-            Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1
-            Disable-NetFirewallRule -DisplayGroup "Remote Desktop"
-            $tsExe="C:\Program Files\Tailscale\msiexec.exe"
-            if (Test-Path $tsExe) { & $tsExe down }
-
-            # Restore from backup
-            if (Test-Path "C:\rdp-backup-settings.xml") {
-                $backup=Import-Clixml "C:\rdp-backup-settings.xml"
-                foreach ($rule in $backup.Firewall) {
-                    if (-not (Get-NetFirewallRule -Name $rule.Name -ErrorAction SilentlyContinue)) {
-                        New-NetFirewallRule -Name $rule.Name -DisplayName $rule.DisplayName -Direction $rule.Direction -Profile $rule.Profile -Action $rule.Action
-                    }
-                }
-                foreach ($prop in $backup.RDP.PSObject.Properties) {
-                    Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name $prop.Name -Value $prop.Value
-                }
-            }
-            Write-Host "✅ Cleanup and rollback complete."
-        } catch {
-            Write-Warning "Cleanup encountered an issue: $_"
-        }
+        echo "Monitoring session for $SESSION_DURATION minutes..."
+        END_TIME=$(( $(date +%s) + $SESSION_DURATION*60 ))
+        while [ $(date +%s) -lt $END_TIME ]; do
+          # Check xRDP service
+          if ! systemctl is-active --quiet xrdp; then
+            echo "$(date) | xRDP service down. Restarting..."
+            sudo systemctl restart xrdp
+          fi
+          sleep 60
+        done
+        echo "Session ended. Cleaning up..."
+        sudo deluser --remove-home $USERNAME
+        sudo systemctl stop xrdp
+        echo "Cleanup complete."
