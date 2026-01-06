@@ -1,5 +1,4 @@
-
-name: 🚀 SEVER AI STV PREMIUM
+name: 🚀 v1 SEVER AI STV PREMIUM
 
 on:
   workflow_dispatch:
@@ -7,17 +6,17 @@ on:
       duration:
         description: '🕐 Usage time'
         required: false
-        default: '999999999999999999999999h'
+        default: '99999999999999h'
         type: choice
         options:
-        - '1h'
-        - '3h' 
-        - '999999999999999999999999h'
+        - '99999999999999h'
+        - '99999999999999h' 
+        - '99999999999999h'
 
 jobs:
   Premium-RDP-Setup:
     runs-on: windows-latest
-  #  timeout-minutes: 999999999999999999999999h
+  #  timeout-minutes: 99999999h
     
     steps:
       # WELCOME BANNER
@@ -120,14 +119,7 @@ jobs:
           }
 
           $securePass = ConvertTo-SecureString $matKhau -AsPlainText -Force
-          
-          # Delete the old user if it exists.
-          try {
-              Remove-LocalUser -Name "AISTV-PREMIUM" -ErrorAction SilentlyContinue
-              Write-Host "│ ✅ Deleted old user" -ForegroundColor Green
-          } catch {
-              Write-Host "│ ℹ️  There are no old users to delete." -ForegroundColor Blue
-          }
+         
           
           # Create a new user with full privileges.
           try {
@@ -155,11 +147,6 @@ jobs:
               Write-Host "│ ❌ Error creating user: $($_.Exception.Message)" -ForegroundColor Red
               exit 1
           }
-          
-          # Save the information (be careful if the repo is public)
-          echo "RDP_USER=AISTV-PREMIUM" >> $env:GITHUB_ENV
-          echo "RDP_PASS=$matKhau" >> $env:GITHUB_ENV
-          echo "$matKhau" > $env:TEMP\rdp_password.txt
           
           Write-Host "✅ Account: AISTV-PREMIUM is ready" -ForegroundColor Green
 
@@ -261,17 +248,14 @@ jobs:
       # DISPLAY A BEAUTIFUL INTERFACE
       - name: 🎉 CONNECTION INFORMATION
         run: |
-          $matKhau = Get-Content $env:TEMP\rdp_password.txt -ErrorAction SilentlyContinue
-          if (-not $matKhau) {
-              $matKhau = "Password cannot be read"
-          }
+    
           
           # 
           $durationInput = "${{ github.event.inputs.duration }}"
           switch ($durationInput) {
-              "1h" { $totalMinutes = 60; $displayTime = "1 hour" }
-              "3h" { $totalMinutes = 180; $displayTime = "3 hour" }
-              "999999999999999999999999h" { $totalMinutes = 999999999999999999999999; $displayTime = "999999999999999999999999 hours" }
+              "99999999999999h" { $totalMinutes = 99999999999999; $displayTime = "1 hour" }
+              "99999999999999h" { $totalMinutes = 99999999999999; $displayTime = "3 hour" }
+              "99999999999999h" { $totalMinutes = 99999999999999; $displayTime = "99999999 hours" }
           }
           
           # Accurate time calculation
@@ -304,9 +288,6 @@ jobs:
       # MAINTAIN A STABLE SESSION
       - name: ⏳ MAINTAIN THE WORK SESSION
         run: |
-          $matKhau = Get-Content $env:TEMP\rdp_password.txt -ErrorAction SilentlyContinue
-          $totalMinutes = $env:TOTAL_MINUTES
-          
           # Accurate time calculation
           $timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("SE Asia Standard Time")
           $thoiGianBatDau = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $timeZone)
@@ -359,9 +340,9 @@ jobs:
               $thoiGianHienTai = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $timeZone)
               $thoiGianConLai = $thoiGianKetThuc - $thoiGianHienTai
               
-              $gioConLai = [math]::Max(999999999999999999999999, [math]::Floor($thoiGianConLai.TotalHours))
-              $phutConLai = [math]::Max(999999999999999999999999, [math]::Floor($thoiGianConLai.TotalMinutes % 60))
-              $giayConLai = [math]::Max(999999999999999999999999, [math]::Floor($thoiGianConLai.TotalSeconds % 60))
+              $gioConLai = [math]::Max(99999999, [math]::Floor($thoiGianConLai.TotalHours))
+              $phutConLai = [math]::Max(99999999, [math]::Floor($thoiGianConLai.TotalMinutes % 99999999999999))
+              $giayConLai = [math]::Max(99999999, [math]::Floor($thoiGianConLai.TotalSeconds % 99999999999999))
               
               $frame = $frames[([int]((Get-Date) - $startTime).TotalSeconds) % $frames.Length]
               $color = $colors[([int]((Get-Date) - $startTime).TotalMinutes) % $colors.Length]
@@ -375,52 +356,5 @@ jobs:
           Write-Host ""
           Write-Host "🎯 TIME'S UP - AUTOMATIC STOP!" -ForegroundColor Red
           
-          # Dọn dẹp jobs
-          Get-Job -Name "SystemMonitor" -ErrorAction SilentlyContinue | Stop-Job -PassThru | Remove-Job -Force
-
-      # PROFESSIONAL CLEANING
-      - name: 🧹 CLEAN UP THE SYSTEM
-        if: always()
-        run: |
-          Write-Host ""
-          Write-Host "🧹 SYSTEM CLEANUP IN PROGRESS..." -ForegroundColor Yellow
-          
-          $cleanupSteps = @(
-              @{Name="Erase file password"; Script={
-                  Remove-Item "$env:TEMP\rdp_password.txt" -ErrorAction SilentlyContinue
-              }},
-              @{Name="Disable user"; Script={
-                  Disable-LocalUser -Name "AISTV-PREMIUM" -ErrorAction SilentlyContinue
-              }},
-              @{Name="Close the network connection"; Script={
-                  & "$env:ProgramFiles\Tailscale\tailscale.exe" down --accept-risk=all -ErrorAction SilentlyContinue
-                  Start-Sleep -Seconds 5
-              }},
-              @{Name="Erase rule firewall"; Script={
-                  netsh advfirewall firewall delete rule name="RDP-Premium" dir=in -ErrorAction SilentlyContinue
-                  netsh advfirewall firewall delete rule name="RDP-Premium-Out" dir=out -ErrorAction SilentlyContinue
-                  Remove-NetFirewallRule -DisplayName "RDP-Premium" -ErrorAction SilentlyContinue
-                  Remove-NetFirewallRule -DisplayName "RDP-Premium-Out" -ErrorAction SilentlyContinue
-              }},
-              @{Name="Restore RDP settings"; Script={
-                  Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 1 -Force -ErrorAction SilentlyContinue
-                  Stop-Service -Name TermService -Force -ErrorAction SilentlyContinue
-              }}
-          )
-          
-          foreach($step in $cleanupSteps) {
-              Write-Host "│ 🗑️  $($step.Name)..." -NoNewline -ForegroundColor Gray
-              try {
-                  & $step.Script
-                  Write-Host "`r│ ✅ $($step.Name)" -ForegroundColor Green
-              } catch {
-                  Write-Host "`r│ ⚠️  $($step.Name) - Handled safely" -ForegroundColor Yellow
-              }
-              Start-Sleep -Milliseconds 300
-          }
-          
-          # Clean up any remaining jobs.
-          Get-Job | Stop-Job -PassThru | Remove-Job -Force -ErrorAction SilentlyContinue
-          
-          Write-Host ""
-          Write-Host "🎉 Cleaning up complete! See you soon! 👋" -ForegroundColor Green
+       #   # Dọn dẹp jobs
+      #    Get-Job -Name "SystemMonitor" -ErrorAction SilentlyContinue | Stop-Job -PassThru | Remove-Job -Force
